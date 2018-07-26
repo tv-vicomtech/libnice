@@ -304,7 +304,7 @@ nice_tcp_passive_socket_accept (NiceSocket *sock)
   nice_address_set_from_sockaddr (&remote_addr, &name.addr);
 
   new_socket = nice_tcp_bsd_socket_new_from_gsock (priv->context, gsock,
-      &sock->addr, &remote_addr, TRUE);
+          &sock->addr, &remote_addr, TRUE);
   g_object_unref (gsock);
 
   if (new_socket) {

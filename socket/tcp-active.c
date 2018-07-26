@@ -260,8 +260,8 @@ nice_tcp_active_socket_connect (NiceSocket *sock, NiceAddress *addr)
 
   nice_address_set_from_sockaddr (&local_addr, &name.addr);
 
-  new_socket = nice_tcp_bsd_socket_new_from_gsock (priv->context, gsock,
-      &local_addr, addr, TRUE);
+  new_socket = nice_tcp_bsd_socket_new_from_gsock (priv->context,
+      gsock, &local_addr, addr, TRUE);
   g_object_unref (gsock);
 
   return new_socket;

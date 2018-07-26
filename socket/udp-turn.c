@@ -71,6 +71,7 @@ typedef struct {
 } ChannelBinding;
 
 typedef struct {
+  GMutex mutex;
   GMainContext *ctx;
   StunAgent agent;
   GList *channels;
@@ -209,6 +210,7 @@ nice_udp_turn_socket_new (GMainContext *ctx, NiceAddress *addr,
         STUN_AGENT_USAGE_NO_ALIGNED_ATTRIBUTES);
   }
 
+  g_mutex_init (&priv->mutex);
   priv->channels = NULL;
   priv->current_binding = NULL;
   priv->base_socket = base_socket;
@@ -966,12 +968,12 @@ priv_forget_send_request (gpointer pointer)
 {
   SendRequest *req = pointer;
 
-  agent_lock ();
+  g_mutex_lock (&req->priv->mutex);
 
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_forget_send_request");
-    agent_unlock ();
+    g_mutex_unlock (&req->priv->mutex);
     return FALSE;
   }
 
@@ -983,7 +985,7 @@ priv_forget_send_request (gpointer pointer)
   g_source_unref (req->source);
   req->source = NULL;
 
-  agent_unlock ();
+  g_mutex_unlock (&req->priv->mutex);
 
   g_slice_free (SendRequest, req);
 
@@ -997,11 +999,11 @@ priv_permission_timeout (gpointer data)
 
   nice_debug ("Permission is about to timeout, schedule renewal");
 
-  agent_lock ();
+  g_mutex_lock (&priv->mutex);
   /* remove all permissions for this agent (the permission for the peer
      we are sending to will be renewed) */
   priv_clear_permissions (priv);
-  agent_unlock ();
+  g_mutex_unlock (&priv->mutex);
 
   return TRUE;
 }
@@ -1015,13 +1017,13 @@ priv_binding_expired_timeout (gpointer data)
 
   nice_debug ("Permission expired, refresh failed");
 
-  agent_lock ();
+  g_mutex_lock (&priv->mutex);
 
   source = g_main_current_source ();
   if (g_source_is_destroyed (source)) {
     nice_debug ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_binding_expired_timeout");
-    agent_unlock ();
+    g_mutex_unlock (&priv->mutex);
     return FALSE;
   }
 
@@ -1061,7 +1063,7 @@ priv_binding_expired_timeout (gpointer data)
     }
   }
 
-  agent_unlock ();
+  g_mutex_unlock (&priv->mutex);
 
   return FALSE;
 }
@@ -1075,13 +1077,13 @@ priv_binding_timeout (gpointer data)
 
   nice_debug ("Permission is about to timeout, sending binding renewal");
 
-  agent_lock ();
+  g_mutex_lock (&priv->mutex);
 
   source = g_main_current_source ();
   if (g_source_is_destroyed (source)) {
     nice_debug ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_binding_timeout");
-    agent_unlock ();
+    g_mutex_unlock (&priv->mutex);
     return FALSE;
   }
 
@@ -1108,7 +1110,7 @@ priv_binding_timeout (gpointer data)
     }
   }
 
-  agent_unlock ();
+  g_mutex_unlock (&priv->mutex);
 
   return FALSE;
 }
@@ -1721,11 +1723,11 @@ priv_retransmissions_tick (gpointer pointer)
 {
   UdpTurnPriv *priv = pointer;
 
-  agent_lock ();
+  g_mutex_lock (&priv->mutex);
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("Source was destroyed. "
         "Avoided race condition in turn.c:priv_retransmissions_tick");
-    agent_unlock ();
+    g_mutex_unlock (&priv->mutex);
     return FALSE;
   }
 
@@ -1736,7 +1738,7 @@ priv_retransmissions_tick (gpointer pointer)
       priv->tick_source_channel_bind = NULL;
     }
   }
-  agent_unlock ();
+  g_mutex_unlock (&priv->mutex);
 
   return FALSE;
 }
@@ -1746,11 +1748,11 @@ priv_retransmissions_create_permission_tick (gpointer pointer)
 {
   UdpTurnPriv *priv = pointer;
 
-  agent_lock ();
+  g_mutex_lock (&priv->mutex);
   if (g_source_is_destroyed (g_main_current_source ())) {
     nice_debug ("Source was destroyed. Avoided race condition in "
                 "turn.c:priv_retransmissions_create_permission_tick");
-    agent_unlock ();
+    g_mutex_unlock (&priv->mutex);
     return FALSE;
   }
 
@@ -1759,7 +1761,7 @@ priv_retransmissions_create_permission_tick (gpointer pointer)
    * if there are pending permissions that require it */
   priv_schedule_tick (priv);
 
-  agent_unlock ();
+  g_mutex_unlock (&priv->mutex);
 
   return FALSE;
 }
