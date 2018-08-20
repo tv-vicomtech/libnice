@@ -1040,7 +1040,7 @@ conn_check_stop (NiceAgent *agent)
  *
  * @return will return FALSE when no more pending timers.
  */
-static gboolean priv_conn_check_tick_unlocked (NiceAgent *agent)
+static gboolean priv_conn_check_tick_agent_locked (NiceAgent *agent)
 {
   CandidateCheckPair *pair = NULL;
   gboolean keep_timer_going = FALSE;
@@ -1150,41 +1150,9 @@ static gboolean priv_conn_check_tick_unlocked (NiceAgent *agent)
   return TRUE;
 }
 
-static gboolean priv_conn_check_tick (gpointer pointer)
-{
-  gboolean ret;
-  NiceAgent *agent = pointer;
-
-  agent_lock();
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
-        "Avoided race condition in priv_conn_check_tick");
-    agent_unlock ();
-    return FALSE;
-  }
-
-  ret = priv_conn_check_tick_unlocked (agent);
-  agent_unlock_and_emit (agent);
-
-  return ret;
-}
-
-static gboolean priv_conn_keepalive_retransmissions_tick (gpointer pointer)
+static gboolean priv_conn_keepalive_retransmissions_tick_agent_locked (gpointer pointer)
 {
   CandidatePair *pair = (CandidatePair *) pointer;
-
-  agent_lock();
-
-  /* A race condition might happen where the mutex above waits for the lock
-   * and in the meantime another thread destroys the source.
-   * In that case, we don't need to run our retransmission tick since it should
-   * have been cancelled */
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
-        "Avoided race condition in priv_conn_keepalive_retransmissions_tick");
-    agent_unlock ();
-    return FALSE;
-  }
 
   g_source_destroy (pair->keepalive.tick_source);
   g_source_unref (pair->keepalive.tick_source);
@@ -1202,7 +1170,6 @@ static gboolean priv_conn_keepalive_retransmissions_tick (gpointer pointer)
                 NULL, &component)) {
           nice_debug ("Could not find stream or component in"
               " priv_conn_keepalive_retransmissions_tick");
-          agent_unlock ();
           return FALSE;
         }
 
@@ -1234,21 +1201,19 @@ static gboolean priv_conn_keepalive_retransmissions_tick (gpointer pointer)
       agent_timeout_add_with_context (pair->keepalive.agent,
           &pair->keepalive.tick_source,
           "Pair keepalive", stun_timer_remainder (&pair->keepalive.timer),
-          priv_conn_keepalive_retransmissions_tick, pair);
+          priv_conn_keepalive_retransmissions_tick_agent_locked, pair);
       break;
     case STUN_USAGE_TIMER_RETURN_SUCCESS:
       agent_timeout_add_with_context (pair->keepalive.agent,
           &pair->keepalive.tick_source,
           "Pair keepalive", stun_timer_remainder (&pair->keepalive.timer),
-          priv_conn_keepalive_retransmissions_tick, pair);
+          priv_conn_keepalive_retransmissions_tick_agent_locked, pair);
       break;
     default:
       g_assert_not_reached();
       break;
   }
 
-
-  agent_unlock_and_emit (pair->keepalive.agent);
   return FALSE;
 }
 
@@ -1405,7 +1370,7 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
               agent_timeout_add_with_context (p->keepalive.agent,
                   &p->keepalive.tick_source, "Pair keepalive",
                   stun_timer_remainder (&p->keepalive.timer),
-                  priv_conn_keepalive_retransmissions_tick, p);
+                  priv_conn_keepalive_retransmissions_tick_agent_locked, p);
             } else {
               ++errors;
             }
@@ -1485,18 +1450,10 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
   return ret;
 }
 
-static gboolean priv_conn_keepalive_tick (gpointer pointer)
+static gboolean priv_conn_keepalive_tick_agent_locked (gpointer pointer)
 {
   NiceAgent *agent = pointer;
   gboolean ret;
-
-  agent_lock();
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
-        "Avoided race condition in priv_conn_keepalive_tick");
-    agent_unlock ();
-    return FALSE;
-  }
 
   ret = priv_conn_keepalive_tick_unlocked (agent);
   if (ret == FALSE) {
@@ -1506,35 +1463,19 @@ static gboolean priv_conn_keepalive_tick (gpointer pointer)
       agent->keepalive_timer_source = NULL;
     }
   }
-  agent_unlock_and_emit (agent);
+
   return ret;
 }
 
 
-static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointer)
+static gboolean priv_turn_allocate_refresh_retransmissions_tick_agent_locked (gpointer pointer)
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
-  NiceAgent *agent = NULL;
-
-  agent_lock();
-
-  /* A race condition might happen where the mutex above waits for the lock
-   * and in the meantime another thread destroys the source.
-   * In that case, we don't need to run our retransmission tick since it should
-   * have been cancelled */
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
-        "Avoided race condition in priv_turn_allocate_refresh_retransmissions_tick");
-    agent_unlock ();
-    return FALSE;
-  }
-
+  NiceAgent *agent = g_object_ref (cand->agent);
 
   g_source_destroy (cand->tick_source);
   g_source_unref (cand->tick_source);
   cand->tick_source = NULL;
-
-  agent = g_object_ref (cand->agent);
 
   switch (stun_timer_refresh (&cand->timer)) {
     case STUN_USAGE_TIMER_RETURN_TIMEOUT:
@@ -1555,20 +1496,17 @@ static gboolean priv_turn_allocate_refresh_retransmissions_tick (gpointer pointe
 
       agent_timeout_add_with_context (agent, &cand->tick_source,
           "Candidate TURN refresh", stun_timer_remainder (&cand->timer),
-          priv_turn_allocate_refresh_retransmissions_tick, cand);
+          priv_turn_allocate_refresh_retransmissions_tick_agent_locked, cand);
       break;
     case STUN_USAGE_TIMER_RETURN_SUCCESS:
       agent_timeout_add_with_context (agent, &cand->tick_source,
           "Candidate TURN refresh", stun_timer_remainder (&cand->timer),
-          priv_turn_allocate_refresh_retransmissions_tick, cand);
+          priv_turn_allocate_refresh_retransmissions_tick_agent_locked, cand);
       break;
     default:
       /* Nothing to do. */
       break;
   }
-
-
-  agent_unlock_and_emit (agent);
 
   g_object_unref (agent);
 
@@ -1629,7 +1567,7 @@ static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand)
 
     agent_timeout_add_with_context (cand->agent, &cand->tick_source,
         "Candidate TURN refresh", stun_timer_remainder (&cand->timer),
-        priv_turn_allocate_refresh_retransmissions_tick, cand);
+        priv_turn_allocate_refresh_retransmissions_tick_agent_locked, cand);
   }
 
 }
@@ -1642,20 +1580,11 @@ static void priv_turn_allocate_refresh_tick_unlocked (CandidateRefresh *cand)
  *
  * @return will return FALSE when no more pending timers.
  */
-static gboolean priv_turn_allocate_refresh_tick (gpointer pointer)
+static gboolean priv_turn_allocate_refresh_tick_agent_locked (gpointer pointer)
 {
   CandidateRefresh *cand = (CandidateRefresh *) pointer;
 
-  agent_lock();
-  if (g_source_is_destroyed (g_main_current_source ())) {
-    nice_debug ("Source was destroyed. "
-        "Avoided race condition in priv_turn_allocate_refresh_tick");
-    agent_unlock ();
-    return FALSE;
-  }
-
   priv_turn_allocate_refresh_tick_unlocked (cand);
-  agent_unlock_and_emit (cand->agent);
 
   return FALSE;
 }
@@ -1673,14 +1602,14 @@ void conn_check_schedule_next (NiceAgent *agent)
   if (agent->conncheck_timer_source == NULL) {
     agent_timeout_add_with_context (agent, &agent->conncheck_timer_source,
         "Connectivity check schedule", agent->timer_ta,
-        priv_conn_check_tick, agent);
+        priv_conn_check_tick_agent_locked, agent);
   }
 
   /* step: also start the keepalive timer */
   if (agent->keepalive_timer_source == NULL) {
     agent_timeout_add_with_context (agent, &agent->keepalive_timer_source,
         "Connectivity keepalive timeout", NICE_AGENT_TIMER_TR_DEFAULT,
-        priv_conn_keepalive_tick, agent);
+        priv_conn_keepalive_tick_agent_locked, agent);
   }
 }
 
@@ -3481,7 +3410,8 @@ priv_add_new_turn_refresh (CandidateDiscovery *cdisco, NiceCandidate *relay_cand
   /* refresh should be sent 1 minute before it expires */
   agent_timeout_add_with_context (agent, &cand->timer_source,
       "Candidate TURN refresh",
-      (lifetime - 60) * 1000, priv_turn_allocate_refresh_tick, cand);
+      (lifetime - 60) * 1000, priv_turn_allocate_refresh_tick_agent_locked,
+      cand);
 
   nice_debug ("timer source is : %p", cand->timer_source);
 
@@ -3792,7 +3722,7 @@ static gboolean priv_map_reply_to_relay_refresh (NiceAgent *agent, StunMessage *
           /* refresh should be sent 1 minute before it expires */
           agent_timeout_add_with_context (cand->agent, &cand->timer_source,
               "Candidate TURN refresh", (lifetime - 60) * 1000,
-              priv_turn_allocate_refresh_tick, cand);
+              priv_turn_allocate_refresh_tick_agent_locked, cand);
 
           g_source_destroy (cand->tick_source);
           g_source_unref (cand->tick_source);
