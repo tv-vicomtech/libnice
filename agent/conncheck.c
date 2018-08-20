@@ -1040,8 +1040,9 @@ conn_check_stop (NiceAgent *agent)
  *
  * @return will return FALSE when no more pending timers.
  */
-static gboolean priv_conn_check_tick_agent_locked (NiceAgent *agent)
+static gboolean priv_conn_check_tick_agent_locked (gpointer user_data)
 {
+  NiceAgent *agent = user_data;
   CandidateCheckPair *pair = NULL;
   gboolean keep_timer_going = FALSE;
   GSList *i, *j;
