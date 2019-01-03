@@ -3,14 +3,14 @@ nice_link_args = []
 
 # libnice.def
 libnice_def = custom_target('libnice.def',
-    command: [find_program('gen-def.py'), '@INPUT@'],
+    command: [python3, join_paths(meson.current_source_dir(), 'gen-def.py'), '@INPUT@'],
     input: 'libnice.sym',
     output: 'libnice.def',
     capture: true)
 
 # map file
 mapfile = custom_target('libnice.map',
-    command: [find_program('gen-map.py'), '@INPUT@'],
+    command: [python3, join_paths(meson.current_source_dir(), 'gen-map.py'), '@INPUT@'],
     input: 'libnice.sym',
     output: 'libnice.map',
     capture: true)

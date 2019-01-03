@@ -232,6 +232,9 @@ endif
 
 gir = find_program('g-ir-scanner', required : get_option('introspection'))
 
+python = import('python')
+python3 = python.find_installation('python3')
+
 subdir('agent')
 subdir('stun')
 subdir('socket')
