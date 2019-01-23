@@ -3311,6 +3311,34 @@ nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr)
   return TRUE;
 }
 
+/* With agent lock */
+static void priv_forget_local_addresses (NiceAgent *agent)
+{
+  GSList *i;
+
+  for (i = agent->local_addresses; i; i = i->next)
+    {
+      NiceAddress *a = i->data;
+
+      nice_address_free (a);
+    }
+
+  g_slist_free (agent->local_addresses);
+  agent->local_addresses = NULL;
+}
+
+NICEAPI_EXPORT gboolean
+nice_agent_forget_local_addresses (NiceAgent *agent)
+{
+  g_return_val_if_fail (NICE_IS_AGENT (agent), FALSE);
+
+  agent_lock (agent);
+  priv_forget_local_addresses (agent);
+  agent_unlock_and_emit (agent);
+
+  return TRUE;
+}
+
 /* Recompute foundations of all candidate pairs from a given stream
  * having a specific remote candidate
  */
@@ -5076,7 +5104,6 @@ nice_agent_restart_stream (
 static void
 nice_agent_dispose (GObject *object)
 {
-  GSList *i;
   QueuedSignal *sig;
   NiceAgent *agent = NICE_AGENT (object);
 
@@ -5093,15 +5120,7 @@ nice_agent_dispose (GObject *object)
 
   priv_remove_keepalive_timer (agent);
 
-  for (i = agent->local_addresses; i; i = i->next)
-    {
-      NiceAddress *a = i->data;
-
-      nice_address_free (a);
-    }
-
-  g_slist_free (agent->local_addresses);
-  agent->local_addresses = NULL;
+  priv_forget_local_addresses (agent);
 
   while (agent->streams) {
     NiceStream *s = agent->streams->data;

@@ -507,6 +507,19 @@ gboolean
 nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr);
 
 /**
+ * nice_agent_forget_local_addresses:
+ * @agent: The #NiceAgent Object
+ *
+ * Forget all the local addresses previously added using
+ * nice_agent_add_local_address().
+ *
+ * Returns: %TRUE on success, %FALSE on fatal errors
+ * Since: 0.1.15
+ */
+gboolean
+nice_agent_forget_local_addresses (NiceAgent *agent);
+
+/**
  * nice_agent_add_stream:
  * @agent: The #NiceAgent Object
  * @n_components: The number of components to add to the stream
