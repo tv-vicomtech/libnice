@@ -40,6 +40,13 @@ test autotools:
       - stun/tests/test-suite.log
       - docs/reference/libnice/test-suite.log
 
+test autotools valgrind:
+  extends: test autotools
+  allow_failure: true
+  script:
+    - ifconfig
+    - make check-valgrind
+
 distcheck autotools:
   stage: test
   image: registry.freedesktop.org/libnice/libnice/centos7/autotools-build
@@ -88,6 +95,15 @@ test meson:
     when: on_failure
     paths:
       - build/meson-logs/
+
+
+test valgrind meson:
+  extends: test meson
+  script:
+    - ifconfig
+    - source scl_source enable rh-python36 && true
+    - meson test -C build/ --setup valgrind --print-errorlogs
+
 
 doc-and-install meson:
   stage: test
