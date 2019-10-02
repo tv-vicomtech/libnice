@@ -1284,7 +1284,8 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat)
       "main-context", ctx,
       "reliable", FALSE,
       NULL);
-  agent->tie_breaker = malloc(sizeof(guint64));
+  g_assert(posix_memalign((void **)&(agent->tie_breaker), 8, sizeof(guint64)) == 0);
+  // agent->tie_breaker = malloc(sizeof(guint64));
 
   return agent;
 }
@@ -1298,6 +1299,8 @@ nice_agent_new_reliable (GMainContext *ctx, NiceCompatibility compat)
       "main-context", ctx,
       "reliable", TRUE,
       NULL);
+  g_assert(posix_memalign((void **)&(agent->tie_breaker), 8, sizeof(guint64)) == 0);
+  // agent->tie_breaker = malloc(sizeof(guint64));
 
   return agent;
 }
@@ -1318,6 +1321,8 @@ nice_agent_new_full (GMainContext *ctx,
       "ice-trickle", (flags & NICE_AGENT_OPTION_ICE_TRICKLE) ? TRUE : FALSE,
       "support-renomination", (flags & NICE_AGENT_OPTION_SUPPORT_RENOMINATION) ? TRUE : FALSE,
       NULL);
+  g_assert(posix_memalign((void **)&(agent->tie_breaker), 8, sizeof(guint64)) == 0);
+  // agent->tie_breaker = malloc(sizeof(guint64));
 
   return agent;
 }

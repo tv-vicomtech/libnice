@@ -161,8 +161,12 @@ nice_component_new (guint id, NiceAgent *agent, NiceStream *stream)
                        "agent", agent,
                        "stream", stream,
                        NULL);
-  ret->selected_pair = malloc(sizeof(CandidatePair));
-  ret->last_clock_timeout = malloc(sizeof(guint64));
+  // ret->selected_pair = malloc(sizeof(CandidatePair));
+  // ret->last_clock_timeout = malloc(sizeof(guint64));
+  int ok = posix_memalign((void **)&(ret->selected_pair), 8, sizeof(CandidatePair));
+  g_assert(ok == 0);
+  ok = posix_memalign((void **)&(ret->last_clock_timeout), 8, sizeof(guint64));
+  g_assert(ok == 0);
   return ret;
 }
 
