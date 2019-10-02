@@ -154,7 +154,7 @@ struct _NiceComponent {
   GObject parent;
 
   NiceComponentType type;
-  guint id;                    /* component id */
+  guint id;                    /* component id */ /* unsigned int 4 */
   NiceComponentState state;
   GSList *local_candidates;    /* list of NiceCandidate objs */
   GSList *remote_candidates;   /* list of NiceCandidate objs */
@@ -163,9 +163,9 @@ struct _NiceComponent {
   guint socket_sources_age;    /* incremented when socket_sources changes */
   GQueue incoming_checks;     /* list of IncomingCheck objs */
   GList *turn_servers;             /* List of TurnServer objs */
-  CandidatePair selected_pair; /* independent from checklists, 
+  CandidatePair *selected_pair; /* independent from checklists, 
 				    see ICE 11.1. "Sending Media" (ID-19) */
-  gboolean fallback_mode;      /* in this case, accepts packets from all, ignore candidate validation */
+  gboolean fallback_mode;      /* in this case, accepts packets from all, ignore candidate validation */ /* int 4 */
   NiceCandidate *restart_candidate; /* for storing active remote candidate during a restart */
   NiceCandidate *turn_candidate; /* for storing active turn candidate if turn servers have been cleared */
   /* I/O handling. The main context must always be non-NULL, and is used for all
@@ -181,7 +181,7 @@ struct _NiceComponent {
                                          lock is to be taken, it must always be
                                          taken before this one */
   NiceAgentRecvFunc io_callback;    /* function called on io cb */
-  gpointer io_user_data;            /* data passed to the io function */
+  gpointer io_user_data;            /* data passed to the io function */ /* void * 4 */
   GQueue pending_io_messages;       /* queue of messages which have been
                                          received but not passed to the client
                                          in an I/O callback or recv() call yet.
@@ -210,7 +210,7 @@ struct _NiceComponent {
 
   PseudoTcpSocket *tcp;
   GSource* tcp_clock;
-  guint64 last_clock_timeout;
+  guint64 *last_clock_timeout;
   gboolean tcp_readable;
   GCancellable *tcp_writable_cancellable;
 

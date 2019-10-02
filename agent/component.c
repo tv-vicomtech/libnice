@@ -156,11 +156,14 @@ socket_source_free (SocketSource *source)
 NiceComponent *
 nice_component_new (guint id, NiceAgent *agent, NiceStream *stream)
 {
-  return g_object_new (NICE_TYPE_COMPONENT,
+  NiceComponent * ret = g_object_new (NICE_TYPE_COMPONENT,
                        "id", id,
                        "agent", agent,
                        "stream", stream,
                        NULL);
+  ret->selected_pair = malloc(sizeof(CandidatePair));
+  ret->last_clock_timeout = malloc(sizeof(guint64));
+  return ret;
 }
 
 void
@@ -185,7 +188,7 @@ nice_component_remove_socket (NiceAgent *agent, NiceComponent *cmp,
       continue;
     }
 
-    if (candidate == cmp->selected_pair.local) {
+    if (candidate == cmp->selected_pair->local) {
       nice_component_clear_selected_pair (cmp);
       agent_signal_component_state_change (agent, cmp->stream_id,
           cmp->id, NICE_COMPONENT_STATE_FAILED);
@@ -217,7 +220,7 @@ nice_component_remove_socket (NiceAgent *agent, NiceComponent *cmp,
       continue;
     }
 
-    if (candidate == cmp->selected_pair.remote) {
+    if (candidate == cmp->selected_pair->remote) {
       nice_component_clear_selected_pair (cmp);
       agent_signal_component_state_change (agent, cmp->stream_id,
           cmp->id, NICE_COMPONENT_STATE_FAILED);
@@ -280,14 +283,14 @@ nice_component_clean_turn_servers (NiceAgent *agent, NiceComponent *cmp)
      * especially important for TURN, because refresh requests to the
      * server need to keep happening.
      */
-    if (candidate == cmp->selected_pair.local) {
+    if (candidate == cmp->selected_pair->local) {
       if (cmp->turn_candidate) {
         relay_candidates = g_slist_append(relay_candidates, cmp->turn_candidate);
       }
       /* Bring the priority down to 0, so that it will be replaced
        * on the new run.
        */
-      cmp->selected_pair.priority = 0;
+      cmp->selected_pair->priority = 0;
       cmp->turn_candidate = candidate;
     } else {
       agent_remove_local_candidate (agent, candidate);
@@ -313,13 +316,13 @@ nice_component_clean_turn_servers (NiceAgent *agent, NiceComponent *cmp)
 static void
 nice_component_clear_selected_pair (NiceComponent *component)
 {
-  if (component->selected_pair.keepalive.tick_source != NULL) {
-    g_source_destroy (component->selected_pair.keepalive.tick_source);
-    g_source_unref (component->selected_pair.keepalive.tick_source);
-    component->selected_pair.keepalive.tick_source = NULL;
+  if (component->selected_pair->keepalive.tick_source != NULL) {
+    g_source_destroy (component->selected_pair->keepalive.tick_source);
+    g_source_unref (component->selected_pair->keepalive.tick_source);
+    component->selected_pair->keepalive.tick_source = NULL;
   }
 
-  memset (&component->selected_pair, 0, sizeof(CandidatePair));
+  memset (component->selected_pair, 0, sizeof(CandidatePair));
 }
 
 /* Must be called with the agent lock held as it touches internal Component
@@ -391,6 +394,14 @@ nice_component_close (NiceAgent *agent, NiceComponent *cmp)
     g_free ((gpointer) vec->buffer);
     g_slice_free (GOutputVector, vec);
   }
+  if (cmp->selected_pair) {
+    free(cmp->selected_pair);
+    cmp->selected_pair = NULL;
+  }
+  if (cmp->last_clock_timeout) {
+    free(cmp->last_clock_timeout);
+    cmp->last_clock_timeout = NULL;
+  }
 }
 
 /*
@@ -446,7 +457,7 @@ nice_component_restart (NiceComponent *cmp)
     /* note: do not remove the remote candidate that is
      *       currently part of the 'selected pair', see ICE
      *       9.1.1.1. "ICE Restarts" (ID-19) */
-    if (candidate == cmp->selected_pair.remote) {
+    if (candidate == cmp->selected_pair->remote) {
       if (cmp->restart_candidate)
 	nice_candidate_free (cmp->restart_candidate);
       cmp->restart_candidate = candidate;
@@ -461,7 +472,7 @@ nice_component_restart (NiceComponent *cmp)
     incoming_check_free (c);
 
   /* Reset the priority to 0 to make sure we get a new pair */
-  cmp->selected_pair.priority = 0;
+  cmp->selected_pair->priority = 0;
 
   /* note: component state managed by agent */
 }
@@ -484,8 +495,8 @@ nice_component_update_selected_pair (NiceAgent *agent, NiceComponent *component,
       G_GUINT64_FORMAT ").", component->id, pair->local->foundation,
       pair->remote->foundation, pair->priority);
 
-  if (component->selected_pair.local &&
-      component->selected_pair.local == component->turn_candidate) {
+  if (component->selected_pair->local &&
+      component->selected_pair->local == component->turn_candidate) {
     discovery_prune_socket (agent,
         component->turn_candidate->sockptr);
     if (stream)
@@ -498,10 +509,10 @@ nice_component_update_selected_pair (NiceAgent *agent, NiceComponent *component,
 
   nice_component_clear_selected_pair (component);
 
-  component->selected_pair.local = pair->local;
-  component->selected_pair.remote = pair->remote;
-  component->selected_pair.priority = pair->priority;
-  component->selected_pair.prflx_priority = pair->prflx_priority;
+  component->selected_pair->local = pair->local;
+  component->selected_pair->remote = pair->remote;
+  component->selected_pair->priority = pair->priority;
+  component->selected_pair->prflx_priority = pair->prflx_priority;
 
   nice_component_add_valid_candidate (agent, component, pair->remote);
 }
@@ -579,9 +590,9 @@ nice_component_set_selected_remote_candidate (NiceComponent *component,
 
   nice_component_clear_selected_pair (component);
 
-  component->selected_pair.local = local;
-  component->selected_pair.remote = remote;
-  component->selected_pair.priority = priority;
+  component->selected_pair->local = local;
+  component->selected_pair->remote = remote;
+  component->selected_pair->priority = priority;
 
   /* Get into fallback mode where packets from any source is accepted once
    * this has been called. This is the expected behavior of pre-ICE SIP.

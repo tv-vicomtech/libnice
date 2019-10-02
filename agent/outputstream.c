@@ -527,8 +527,8 @@ nice_output_stream_is_writable (GPollableOutputStream *stream)
         priv->stream_id);
     goto done;
   }
-  if (component->selected_pair.local != NULL) {
-    NiceSocket *sockptr = component->selected_pair.local->sockptr;
+  if (component->selected_pair->local != NULL) {
+    NiceSocket *sockptr = component->selected_pair->local->sockptr;
 
     /* If it’s a reliable agent, see if there’s any space in the pseudo-TCP
      * output buffer. */

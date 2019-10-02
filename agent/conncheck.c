@@ -1549,8 +1549,8 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
     NiceStream *stream = i->data;
     for (j = stream->components; j; j = j->next) {
       NiceComponent *component = j->data;
-      if (component->selected_pair.local != NULL) {
-	CandidatePair *p = &component->selected_pair;
+      if (component->selected_pair->local != NULL) {
+	CandidatePair *p = component->selected_pair;
 
         /* Disable keepalive checks on TCP candidates unless explicitly enabled */
         if (p->local->transport != NICE_CANDIDATE_TRANSPORT_UDP &&
@@ -1593,7 +1593,7 @@ static gboolean priv_conn_keepalive_tick_unlocked (NiceAgent *agent)
                 uname, uname_len, password, password_len,
                 agent->controlling_mode, agent->controlling_mode,
                 p->prflx_priority,
-                agent->tie_breaker,
+                *(agent->tie_breaker),
                 NULL,
                 agent_to_ice_compatibility (agent));
 
@@ -2032,7 +2032,7 @@ static gboolean priv_update_selected_pair (NiceAgent *agent, NiceComponent *comp
 
   g_assert (component);
   g_assert (pair);
-  if (pair->priority > component->selected_pair.priority) {
+  if (pair->priority > component->selected_pair->priority) {
     nice_debug ("Agent %p : changing SELECTED PAIR for component %u: %s:%s "
         "(prio:%" G_GUINT64_FORMAT ").", agent, component->id,
         pair->local->foundation, pair->remote->foundation, pair->priority);
@@ -2858,7 +2858,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
 	     tmpbuf2, nice_address_get_port (&pair->remote->addr),
              pair->sockptr->fileno ? g_socket_get_fd(pair->sockptr->fileno) : -1,
 	     pair, pair->component_id,
-	     (unsigned long long)agent->tie_breaker,
+	     (unsigned long long)*(agent->tie_breaker),
         (int) uname_len, uname, uname_len,
         (int) password_len, password, password_len,
         pair->prflx_priority,
@@ -2903,7 +2903,7 @@ int conn_check_send (NiceAgent *agent, CandidateCheckPair *pair)
       &stun->message, stun->buffer, sizeof(stun->buffer),
       uname, uname_len, password, password_len,
       cand_use, controlling, pair->prflx_priority,
-      agent->tie_breaker,
+      *(agent->tie_breaker),
       pair->local->foundation,
       agent_to_ice_compatibility (agent));
 
@@ -4194,18 +4194,18 @@ static gboolean priv_map_reply_to_keepalive_conncheck (NiceAgent *agent,
   StunTransactionId response_id;
   stun_message_id (resp, response_id);
 
-  if (component->selected_pair.keepalive.stun_message.buffer) {
-      stun_message_id (&component->selected_pair.keepalive.stun_message,
+  if (component->selected_pair->keepalive.stun_message.buffer) {
+      stun_message_id (&component->selected_pair->keepalive.stun_message,
           conncheck_id);
       if (memcmp (conncheck_id, response_id, sizeof(StunTransactionId)) == 0) {
         nice_debug ("Agent %p : Keepalive for selected pair received.",
             agent);
-        if (component->selected_pair.keepalive.tick_source) {
-          g_source_destroy (component->selected_pair.keepalive.tick_source);
-          g_source_unref (component->selected_pair.keepalive.tick_source);
-          component->selected_pair.keepalive.tick_source = NULL;
+        if (component->selected_pair->keepalive.tick_source) {
+          g_source_destroy (component->selected_pair->keepalive.tick_source);
+          g_source_unref (component->selected_pair->keepalive.tick_source);
+          component->selected_pair->keepalive.tick_source = NULL;
         }
-        component->selected_pair.keepalive.stun_message.buffer = NULL;
+        component->selected_pair->keepalive.stun_message.buffer = NULL;
         return TRUE;
       }
   }
@@ -4335,14 +4335,14 @@ static gboolean conn_check_handle_renomination (NiceAgent *agent, NiceStream *st
      * If another pair is SELECTED, change this pair's priority to be greater than
      * selected pair's priority so this pair gets SELECTED!
      */
-    if (component->selected_pair.priority &&
-        component->selected_pair.remote && component->selected_pair.remote != remote_candidate &&
-        component->selected_pair.local && component->selected_pair.local != local_candidate) {
+    if (component->selected_pair->priority &&
+        component->selected_pair->remote && component->selected_pair->remote != remote_candidate &&
+        component->selected_pair->local && component->selected_pair->local != local_candidate) {
       for (lst = stream->conncheck_list; lst; lst = lst->next) {
         CandidateCheckPair *pair = lst->data;
         if (pair->local == local_candidate && pair->remote == remote_candidate) {
           if (pair->valid) {
-            pair->priority = component->selected_pair.priority + 1;
+            pair->priority = component->selected_pair->priority + 1;
           }
           break;
         }
@@ -4632,7 +4632,7 @@ gboolean conn_check_handle_inbound_stun (NiceAgent *agent, NiceStream *stream,
     rbuf_len = sizeof (rbuf);
     res = stun_usage_ice_conncheck_create_reply (&component->stun_agent, &req,
         &msg, rbuf, &rbuf_len, &sockaddr.storage, sizeof (sockaddr),
-        &control, agent->tie_breaker,
+        &control, *(agent->tie_breaker),
         agent_to_ice_compatibility (agent));
 
     if (   agent->compatibility == NICE_COMPATIBILITY_MSN
@@ -4752,8 +4752,8 @@ conn_check_prune_socket (NiceAgent *agent, NiceStream *stream, NiceComponent *co
 {
   GSList *l;
 
-  if (component->selected_pair.local &&
-      component->selected_pair.local->sockptr == sock &&
+  if (component->selected_pair->local &&
+      component->selected_pair->local->sockptr == sock &&
       component->state == NICE_COMPONENT_STATE_READY) {
     nice_debug ("Agent %p: Selected pair socket %p has been destroyed, "
         "declaring failed", agent, sock);
