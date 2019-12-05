@@ -570,29 +570,31 @@ nice_agent_set_port_range (
     guint max_port);
 
 /**
- * nice_agent_set_port_exclusions:
+ * nice_agent_exclude_port_range:
  * @agent: The #NiceAgent Object
  * @stream_id: The ID of the stream
  * @component_id: The ID of the component
- * @ports: The ports that should be excluded
+ * @min_port: The minimum port to exclude
+ * @max_port: The maximum port to exclude
  *
- * Sets a list of ports that should not be used for allocating host candidates.
+ * Defines a range of ports that should be excluded from allocation of host
+ * candidates. To exclude a single port, just provide it as both minimum and
+ * maximum.
  * <para>
- * The provided ports is a comma-separated list of port definitions. A port
- * definition can be a single port number (e.g. "12345"), or a port range (e.g.
- * "11111-22222").
+ * This method can be called multiple times; doing so will add the provided
+ * port ranges to the internal exclusion list.
  * </para>
  * <para>
  * This MUST be called before nice_agent_gather_candidates()
  * </para>
- *
  */
 void
-nice_agent_set_port_exclusions (
+nice_agent_exclude_port_range (
     NiceAgent *agent,
     guint stream_id,
     guint component_id,
-    gchar* ports);
+    guint min_port,
+    guint max_port);
 
 /**
  * nice_agent_set_relay_info:
