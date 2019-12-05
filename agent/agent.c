@@ -165,7 +165,7 @@ static void nice_agent_set_property (GObject *object,
 static gint
 compare_int (gconstpointer a, gconstpointer b, gpointer user_data)
 {
-  return (a > b) - (a < b);
+  return a - b;
 }
 
 void agent_lock (NiceAgent *agent)
