@@ -53,6 +53,7 @@ nice_agent_restart_stream
 nice_agent_send
 nice_agent_send_messages_nonblocking
 nice_agent_set_port_range
+nice_agent_set_port_exclusions
 nice_agent_set_relay_info
 nice_agent_set_remote_candidates
 nice_agent_set_remote_credentials

@@ -1107,6 +1107,8 @@ nice_component_init (NiceComponent *component)
   nice_component_set_io_context (component, NULL);
   nice_component_set_io_callback (component, NULL, NULL, NULL, 0, NULL);
 
+  component->exclude_ports = g_sequence_new (NULL);
+
   g_queue_init (&component->queued_tcp_packets);
   g_queue_init (&component->incoming_checks);
 }
@@ -1232,6 +1234,8 @@ nice_component_finalize (GObject *obj)
   }
 
   g_main_context_unref (cmp->own_ctx);
+
+  g_sequence_free (cmp->exclude_ports);
 
   g_weak_ref_clear (&cmp->agent_ref);
 

@@ -162,6 +162,12 @@ static void nice_agent_get_property (GObject *object,
 static void nice_agent_set_property (GObject *object,
   guint property_id, const GValue *value, GParamSpec *pspec);
 
+static gint
+compare_int (gconstpointer a, gconstpointer b, gpointer user_data)
+{
+  return (a > b) - (a < b);
+}
+
 void agent_lock (NiceAgent *agent)
 {
   g_mutex_lock (&agent->agent_mutex);
@@ -3156,10 +3162,16 @@ nice_agent_gather_candidates (
 
         host_candidate = NULL;
         while (res == HOST_CANDIDATE_CANT_CREATE_SOCKET) {
-          nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
-          nice_address_set_port (addr, current_port);
-          res =  discovery_add_local_host_candidate (agent, stream->id, cid,
-              addr, transport, &host_candidate);
+          if (NULL == g_sequence_lookup (component->exclude_ports,
+              GUINT_TO_POINTER (current_port), compare_int, NULL))
+          {
+            nice_debug ("Agent %p: Trying to create host candidate on port %d",
+                agent, current_port);
+            nice_address_set_port (addr, current_port);
+            res = discovery_add_local_host_candidate (agent, stream->id, cid,
+                addr, transport, &host_candidate);
+          }
+
           if (current_port > 0)
             current_port++;
           if (current_port > component->max_port) current_port = component->min_port;
@@ -3452,6 +3464,86 @@ nice_agent_set_port_range (NiceAgent *agent, guint stream_id, guint component_id
     }
   }
 
+  agent_unlock_and_emit (agent);
+}
+
+NICEAPI_EXPORT void
+nice_agent_set_port_exclusions (NiceAgent *agent, guint stream_id,
+    guint component_id, gchar* ports)
+{
+  NiceStream *stream;
+  NiceComponent *component;
+  gchar **tokens;
+
+  g_return_if_fail (NICE_IS_AGENT (agent));
+  g_return_if_fail (stream_id >= 1);
+  g_return_if_fail (component_id >= 1);
+
+  agent_lock (agent);
+
+  if (!agent_find_component (agent, stream_id, component_id, &stream,
+          &component)) {
+    goto set_port_exclusions_end;
+  }
+
+  if (stream->gathering_started) {
+    g_critical ("nice_agent_gather_candidates (stream_id=%u) already called for this stream", stream_id);
+    goto set_port_exclusions_end;
+  }
+
+  tokens = g_strsplit (ports, ",", 0);
+
+  for (int i = 0; tokens && tokens[i]; ++i) {
+    if (strchr (tokens[i], '-') != NULL) {
+      // token is a port range: 1111-2222
+      gchar **limits = g_strsplit (tokens[i], "-", 0);
+
+      if (limits[0] != NULL && limits[1] != NULL) {
+        guint begin = (guint) g_ascii_strtoull (limits[0], NULL, 10);
+        guint end = (guint) g_ascii_strtoull (limits[1], NULL, 10);
+
+        if (begin == 0 || end == 0) {
+          // Abort processing ill-formed tokens
+          continue;
+        }
+
+        for (guint port = begin; port <= end; ++port) {
+          gpointer data = GUINT_TO_POINTER (port);
+
+          if (NULL == g_sequence_lookup (component->exclude_ports, data,
+              compare_int, NULL)) {
+            g_sequence_append (component->exclude_ports, data);
+          }
+        }
+      }
+
+      g_strfreev (limits);
+    }
+    else {
+      gpointer data;
+
+      // token is a plain port number: 1234
+      guint port = (guint) g_ascii_strtoull (tokens[i], NULL, 10);
+
+      if (port == 0) {
+        // Abort processing ill-formed tokens
+        continue;
+      }
+
+      data = GUINT_TO_POINTER (port);
+      if (NULL == g_sequence_lookup (component->exclude_ports, data,
+          compare_int, NULL)) {
+        g_sequence_append (component->exclude_ports, data);
+      }
+    }
+
+    // Sort all newly added values (if any)
+    g_sequence_sort (component->exclude_ports, compare_int, NULL);
+  }
+
+  g_strfreev (tokens);
+
+set_port_exclusions_end:
   agent_unlock_and_emit (agent);
 }
 
