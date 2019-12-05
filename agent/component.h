@@ -218,7 +218,7 @@ struct _NiceComponent {
 
   guint min_port;
   guint max_port;
-  GSequence *exclude_ports;
+  GSList *exclude_ports;
 
   /* Queue of messages received before a selected socket was available to send
    * ACKs on. The messages are dequeued to the pseudo-TCP socket once a selected
@@ -312,6 +312,13 @@ nice_component_verify_remote_candidate (NiceComponent *component,
 
 GPtrArray *
 nice_component_get_sockets (NiceComponent *component);
+
+void
+nice_component_exclude_port_range (NiceComponent *component, guint min_port,
+    guint max_port);
+
+gboolean
+nice_component_port_excluded (NiceComponent *component, guint port);
 
 G_END_DECLS
 
