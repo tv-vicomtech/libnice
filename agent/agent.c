@@ -3474,6 +3474,7 @@ nice_agent_set_port_exclusions (NiceAgent *agent, guint stream_id,
   NiceStream *stream;
   NiceComponent *component;
   gchar **tokens;
+  int i;
 
   g_return_if_fail (NICE_IS_AGENT (agent));
   g_return_if_fail (stream_id >= 1);
@@ -3493,7 +3494,7 @@ nice_agent_set_port_exclusions (NiceAgent *agent, guint stream_id,
 
   tokens = g_strsplit (ports, ",", 0);
 
-  for (int i = 0; tokens && tokens[i]; ++i) {
+  for (i = 0; tokens && tokens[i]; i++) {
     if (strchr (tokens[i], '-') != NULL) {
       // token is a port range: 1111-2222
       gchar **limits = g_strsplit (tokens[i], "-", 0);
@@ -3501,13 +3502,14 @@ nice_agent_set_port_exclusions (NiceAgent *agent, guint stream_id,
       if (limits[0] != NULL && limits[1] != NULL) {
         guint begin = (guint) g_ascii_strtoull (limits[0], NULL, 10);
         guint end = (guint) g_ascii_strtoull (limits[1], NULL, 10);
+        guint port;
 
         if (begin == 0 || end == 0) {
           // Abort processing ill-formed tokens
           continue;
         }
 
-        for (guint port = begin; port <= end; ++port) {
+        for (port = begin; port <= end; port++) {
           gpointer data = GUINT_TO_POINTER (port);
 
           if (NULL == g_sequence_lookup (component->exclude_ports, data,
@@ -3520,17 +3522,15 @@ nice_agent_set_port_exclusions (NiceAgent *agent, guint stream_id,
       g_strfreev (limits);
     }
     else {
-      gpointer data;
-
       // token is a plain port number: 1234
       guint port = (guint) g_ascii_strtoull (tokens[i], NULL, 10);
+      gpointer data = GUINT_TO_POINTER (port);
 
       if (port == 0) {
         // Abort processing ill-formed tokens
         continue;
       }
 
-      data = GUINT_TO_POINTER (port);
       if (NULL == g_sequence_lookup (component->exclude_ports, data,
           compare_int, NULL)) {
         g_sequence_append (component->exclude_ports, data);
