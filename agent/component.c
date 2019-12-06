@@ -1258,7 +1258,8 @@ nice_component_finalize (GObject *obj)
 
   g_main_context_unref (cmp->own_ctx);
 
-  g_slist_free_full (cmp->exclude_ports, exclude_ports_data_destroy);
+  g_slist_free_full (cmp->exclude_ports,
+      (GDestroyNotify) exclude_ports_data_destroy);
 
   g_weak_ref_clear (&cmp->agent_ref);
 
@@ -1668,7 +1669,7 @@ nice_component_get_sockets (NiceComponent *component)
 
 void
 nice_component_exclude_port_range (NiceComponent *component, guint min_port,
-    guint max_port);
+    guint max_port)
 {
   ExcludePortsData *data = exclude_ports_data_new(min_port, max_port);
   component->exclude_ports = g_slist_prepend (component->exclude_ports, data);
@@ -1677,7 +1678,7 @@ nice_component_exclude_port_range (NiceComponent *component, guint min_port,
 gboolean
 nice_component_port_excluded (NiceComponent *component, guint port)
 {
-  const GList *iter;
+  const GSList *iter;
 
   for (iter = component->exclude_ports; iter; iter = g_slist_next (iter)) {
     ExcludePortsData *data = (ExcludePortsData *) iter->data;
