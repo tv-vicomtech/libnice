@@ -1,12 +1,6 @@
 #! /bin/sh
 
-if test -n "${BUILT_WITH_MESON}"; then
-  STUND=$1
-  TEST_FULLMODE=$2
-else
-  STUND=../stun/tools/stund
-  TEST_FULLMODE=./test-fullmode
-fi
+STUND=../stun/tools/stund
 
 echo "Starting ICE full-mode with STUN unit test."
 
@@ -27,7 +21,7 @@ rm -f -- "$pidfile"
 (sh -c "echo \$\$ > \"$pidfile\" && exec "$STUND" ${NICE_STUN_SERVER_PORT}") &
 sleep 1
 
-"${TEST_FULLMODE}"
+./test-fullmode
 error=$?
 
 kill "$(cat "$pidfile")"
