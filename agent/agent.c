@@ -1194,7 +1194,7 @@ nice_agent_class_init (NiceAgentClass *klass)
 
 static void priv_generate_tie_breaker (NiceAgent *agent)
 {
-  nice_rng_generate_bytes (agent->rng, 8, (gchar*)&agent->tie_breaker);
+  nice_rng_generate_bytes (agent->rng, 8, (gchar*)agent->tie_breaker);
 }
 
 static void
@@ -1284,6 +1284,8 @@ nice_agent_new (GMainContext *ctx, NiceCompatibility compat)
       "main-context", ctx,
       "reliable", FALSE,
       NULL);
+  g_assert(posix_memalign((void **)&(agent->tie_breaker), 8, sizeof(guint64)) == 0);
+  // agent->tie_breaker = malloc(sizeof(guint64));
 
   return agent;
 }
@@ -1297,6 +1299,8 @@ nice_agent_new_reliable (GMainContext *ctx, NiceCompatibility compat)
       "main-context", ctx,
       "reliable", TRUE,
       NULL);
+  g_assert(posix_memalign((void **)&(agent->tie_breaker), 8, sizeof(guint64)) == 0);
+  // agent->tie_breaker = malloc(sizeof(guint64));
 
   return agent;
 }
@@ -1317,6 +1321,8 @@ nice_agent_new_full (GMainContext *ctx,
       "ice-trickle", (flags & NICE_AGENT_OPTION_ICE_TRICKLE) ? TRUE : FALSE,
       "support-renomination", (flags & NICE_AGENT_OPTION_SUPPORT_RENOMINATION) ? TRUE : FALSE,
       NULL);
+  g_assert(posix_memalign((void **)&(agent->tie_breaker), 8, sizeof(guint64)) == 0);
+  // agent->tie_breaker = malloc(sizeof(guint64));
 
   return agent;
 }
@@ -2081,12 +2087,12 @@ pseudo_tcp_socket_write_packet (PseudoTcpSocket *psocket,
   if (agent == NULL)
     return WR_FAIL;
 
-  if (component->selected_pair.local != NULL) {
+  if (component->selected_pair->local != NULL) {
     NiceSocket *sock;
     NiceAddress *addr;
 
-    sock = component->selected_pair.local->sockptr;
-    addr = &component->selected_pair.remote->addr;
+    sock = component->selected_pair->local->sockptr;
+    addr = &component->selected_pair->remote->addr;
 
     if (nice_debug_is_enabled ()) {
       gchar tmpbuf[INET6_ADDRSTRLEN];
@@ -2141,11 +2147,11 @@ static void
 adjust_tcp_clock (NiceAgent *agent, NiceStream *stream, NiceComponent *component)
 {
   if (!pseudo_tcp_socket_is_closed (component->tcp)) {
-    guint64 timeout = component->last_clock_timeout;
+    guint64 timeout = *(component->last_clock_timeout);
 
     if (pseudo_tcp_socket_get_next_clock (component->tcp, &timeout)) {
-      if (timeout != component->last_clock_timeout) {
-        component->last_clock_timeout = timeout;
+      if (timeout != *(component->last_clock_timeout)) {
+        *(component->last_clock_timeout) = timeout;
         if (component->tcp_clock) {
           g_source_set_ready_time (component->tcp_clock, timeout * 1000);
         }
@@ -2183,8 +2189,8 @@ _tcp_sock_is_writable (NiceSocket *sock, gpointer user_data)
 
   /* Don't signal writable if the socket that has become writable is not
    * the selected pair */
-  if (component->selected_pair.local == NULL ||
-      !nice_socket_is_based_on (component->selected_pair.local->sockptr, sock)) {
+  if (component->selected_pair->local == NULL ||
+      !nice_socket_is_based_on (component->selected_pair->local->sockptr, sock)) {
     agent_unlock (agent);
     g_object_unref (agent);
     return;
@@ -2355,9 +2361,9 @@ process_queued_tcp_packets (NiceAgent *agent, NiceStream *stream,
 
   g_assert (agent->reliable);
 
-  if (component->selected_pair.local == NULL ||
+  if (component->selected_pair->local == NULL ||
       pseudo_tcp_socket_is_closed (component->tcp) ||
-      nice_socket_is_reliable (component->selected_pair.local->sockptr)) {
+      nice_socket_is_reliable (component->selected_pair->local->sockptr)) {
     return;
   }
 
@@ -3497,8 +3503,8 @@ static void priv_update_pair_foundations (NiceAgent *agent,
               NICE_CANDIDATE_PAIR_MAX_FOUNDATION);
           nice_debug ("Agent %p : Updating pair %p foundation to '%s'",
               agent, pair, pair->foundation);
-          if (component->selected_pair.local == pair->local &&
-              component->selected_pair.remote == pair->remote) {
+          if (component->selected_pair->local == pair->local &&
+              component->selected_pair->remote == pair->remote) {
             nice_debug ("Agent %p : updating SELECTED PAIR for component "
               "%u: %s (prio:%" G_GUINT64_FORMAT ").", agent,
               component->id, foundation, pair->priority);
@@ -4212,7 +4218,7 @@ agent_recv_message_unlocked (
        * selected, then process the incoming packets and send out ACKs, than try
        * to process them now, fail to send the ACKs, and incur a timeout in our
        * pseudo-TCP state machine. */
-      if (component->selected_pair.local == NULL) {
+      if (component->selected_pair->local == NULL) {
         GOutputVector *vec = g_slice_new (GOutputVector);
         vec->buffer = compact_input_message (message, &vec->size);
         g_queue_push_tail (&component->queued_tcp_packets, vec);
@@ -4921,18 +4927,18 @@ nice_agent_send_messages_nonblocking_internal (
 
   /* FIXME: Cancellation isn’t yet supported, but it doesn’t matter because
    * we only deal with non-blocking writes. */
-  if (component->selected_pair.local != NULL) {
+  if (component->selected_pair->local != NULL) {
     if (nice_debug_is_enabled ()) {
       gchar tmpbuf[INET6_ADDRSTRLEN];
-      nice_address_to_string (&component->selected_pair.remote->addr, tmpbuf);
+      nice_address_to_string (&component->selected_pair->remote->addr, tmpbuf);
 
       nice_debug_verbose ("Agent %p : s%d:%d: sending %u messages to "
           "[%s]:%d", agent, stream_id, component_id, n_messages, tmpbuf,
-          nice_address_get_port (&component->selected_pair.remote->addr));
+          nice_address_get_port (&component->selected_pair->remote->addr));
     }
 
     if(agent->reliable &&
-        !nice_socket_is_reliable (component->selected_pair.local->sockptr)) {
+        !nice_socket_is_reliable (component->selected_pair->local->sockptr)) {
       if (!pseudo_tcp_socket_is_closed (component->tcp)) {
         /* Send on the pseudo-TCP socket. */
         n_sent = pseudo_tcp_socket_send_messages (component->tcp, messages,
@@ -4954,8 +4960,8 @@ nice_agent_send_messages_nonblocking_internal (
       NiceSocket *sock;
       NiceAddress *addr;
 
-      sock = component->selected_pair.local->sockptr;
-      addr = &component->selected_pair.remote->addr;
+      sock = component->selected_pair->local->sockptr;
+      addr = &component->selected_pair->remote->addr;
 
       if (nice_socket_is_reliable (sock)) {
         guint i;
@@ -5380,8 +5386,8 @@ component_io_cb (GSocket *gsocket, GIOCondition condition, gpointer user_data)
   if (condition & G_IO_HUP) {
     nice_debug ("Agent %p: NiceSocket %p has received HUP", agent,
         socket_source->socket);
-    if (component->selected_pair.local &&
-        component->selected_pair.local->sockptr == socket_source->socket &&
+    if (component->selected_pair->local &&
+        component->selected_pair->local->sockptr == socket_source->socket &&
         component->state == NICE_COMPONENT_STATE_READY) {
       nice_debug ("Agent %p: Selected pair socket %p has HUP, declaring failed",
           agent, socket_source->socket);
@@ -5720,9 +5726,9 @@ nice_agent_get_selected_pair (NiceAgent *agent, guint stream_id,
           &stream, &component))
     goto done;
 
-  if (component->selected_pair.local && component->selected_pair.remote) {
-    *local = component->selected_pair.local;
-    *remote = component->selected_pair.remote;
+  if (component->selected_pair->local && component->selected_pair->remote) {
+    *local = component->selected_pair->local;
+    *remote = component->selected_pair->remote;
     ret = TRUE;
   }
 
@@ -5756,17 +5762,17 @@ nice_agent_get_selected_socket (NiceAgent *agent, guint stream_id,
           &stream, &component))
     goto done;
 
-  if (!component->selected_pair.local || !component->selected_pair.remote)
+  if (!component->selected_pair->local || !component->selected_pair->remote)
     goto done;
 
-  if (component->selected_pair.local->type == NICE_CANDIDATE_TYPE_RELAYED)
+  if (component->selected_pair->local->type == NICE_CANDIDATE_TYPE_RELAYED)
     goto done;
 
   /* ICE-TCP requires RFC4571 framing, even if unreliable */
-  if (component->selected_pair.local->transport != NICE_CANDIDATE_TRANSPORT_UDP)
+  if (component->selected_pair->local->transport != NICE_CANDIDATE_TRANSPORT_UDP)
     goto done;
 
-  nice_socket = (NiceSocket *)component->selected_pair.local->sockptr;
+  nice_socket = (NiceSocket *)component->selected_pair->local->sockptr;
   if (nice_socket->fileno)
     g_socket = g_object_ref (nice_socket->fileno);
 
@@ -5925,9 +5931,9 @@ nice_agent_set_selected_remote_candidate (
   conn_check_prune_stream (agent, stream);
 
   /* Store previous selected pair */
-  local = component->selected_pair.local;
-  remote = component->selected_pair.remote;
-  priority = component->selected_pair.priority;
+  local = component->selected_pair->local;
+  remote = component->selected_pair->remote;
+  priority = component->selected_pair->priority;
 
   /* step: set the selected pair */
   lcandidate = nice_component_set_selected_remote_candidate (component, agent,
@@ -5942,9 +5948,9 @@ nice_agent_set_selected_remote_candidate (
         stream->id, component->id);
     /* Revert back to previous selected pair */
     /* FIXME: by doing this, we lose the keepalive tick */
-    component->selected_pair.local = local;
-    component->selected_pair.remote = remote;
-    component->selected_pair.priority = priority;
+    component->selected_pair->local = local;
+    component->selected_pair->remote = remote;
+    component->selected_pair->priority = priority;
     goto done;
   }
 
@@ -6810,6 +6816,11 @@ nice_agent_close_async (NiceAgent *agent, GAsyncReadyCallback callback,
   refresh_prune_agent_async (agent, on_agent_refreshes_pruned, task);
 
   agent_unlock (agent);
+
+  if (agent->tie_breaker) {
+    free(agent->tie_breaker);
+    agent->tie_breaker = NULL;
+  }
 }
 
 
