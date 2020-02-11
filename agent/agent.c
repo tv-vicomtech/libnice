@@ -1225,17 +1225,17 @@ priv_update_controlling_mode (NiceAgent *agent, gboolean value)
     if (update_controlling_mode) {
       agent->controlling_mode = agent->saved_controlling_mode;
       nice_debug ("Agent %p : Property set, changing role to \"%s\".",
-        agent, agent->controlling_mode ? "controlling" : "controlled");
+          agent, agent->controlling_mode ? "controlling" : "controlled");
     } else {
       nice_debug ("Agent %p : Property set, role switch requested "
-        "but conncheck already started.", agent);
+          "but conncheck already started.", agent);
       nice_debug ("Agent %p : Property set, staying with role \"%s\" "
-        "until restart.", agent,
-        agent->controlling_mode ? "controlling" : "controlled");
+          "until restart.", agent,
+          agent->controlling_mode ? "controlling" : "controlled");
     }
   } else
     nice_debug ("Agent %p : Property set, role is already \"%s\".", agent,
-      agent->controlling_mode ? "controlling" : "controlled");
+        agent->controlling_mode ? "controlling" : "controlled");
 }
 
 static void
@@ -3169,7 +3169,7 @@ nice_agent_gather_candidates (
 
         if (res == HOST_CANDIDATE_REDUNDANT) {
           nice_debug ("Agent %p: Ignoring local candidate, it's redundant",
-                      agent);
+              agent);
           continue;
         } else if (res == HOST_CANDIDATE_FAILED) {
           nice_debug ("Agent %p: Could ot retrieive component %d/%d", agent,
@@ -3474,19 +3474,22 @@ nice_agent_add_local_address (NiceAgent *agent, NiceAddress *addr)
 }
 
 /* Recompute foundations of all candidate pairs from a given stream
- * having a specific remote candidate
+ * having a specific remote candidate, and eventually update the
+ * priority of the selected pair as well.
  */
 static void priv_update_pair_foundations (NiceAgent *agent,
     guint stream_id, guint component_id, NiceCandidate *remote)
 {
+  NiceStream *stream;
   NiceComponent *component;
-  NiceStream *stream = agent_find_stream (agent, stream_id);
 
-  if (stream &&
-      agent_find_component (agent, stream_id, component_id, NULL, &component)) {
+  if (agent_find_component (agent, stream_id, component_id, &stream,
+      &component)) {
     GSList *i;
+
     for (i = stream->conncheck_list; i; i = i->next) {
       CandidateCheckPair *pair = i->data;
+
       if (pair->remote == remote) {
         gchar foundation[NICE_CANDIDATE_PAIR_MAX_FOUNDATION];
         g_snprintf (foundation, NICE_CANDIDATE_PAIR_MAX_FOUNDATION, "%s:%s",
@@ -3499,9 +3502,17 @@ static void priv_update_pair_foundations (NiceAgent *agent,
               agent, pair, pair->foundation);
           if (component->selected_pair.local == pair->local &&
               component->selected_pair.remote == pair->remote) {
+            /* the foundation update of the selected pair also implies
+             * an update of its priority. prflx_priority doesn't change
+             * because only the remote candidate foundation is modified.
+             */
+            nice_debug ("Agent %p : pair %p is the selected pair, updating "
+                "its priority.", agent, pair);
+            component->selected_pair.priority = pair->priority;
+
             nice_debug ("Agent %p : updating SELECTED PAIR for component "
-              "%u: %s (prio:%" G_GUINT64_FORMAT ").", agent,
-              component->id, foundation, pair->priority);
+                "%u: %s (prio:%" G_GUINT64_FORMAT ").", agent,
+                component->id, foundation, pair->priority);
             agent_signal_new_selected_pair (agent, pair->stream_id,
               component->id, pair->local, pair->remote);
           }
@@ -3509,6 +3520,29 @@ static void priv_update_pair_foundations (NiceAgent *agent,
       }
     }
   }
+}
+
+/* Returns the nominated pair with the highest priority.
+ */
+static CandidateCheckPair *priv_get_highest_priority_nominated_pair (
+    NiceAgent *agent, guint stream_id, guint component_id)
+{
+  NiceStream *stream;
+  NiceComponent *component;
+  CandidateCheckPair *pair;
+  GSList *i;
+
+  if (agent_find_component (agent, stream_id, component_id, &stream,
+      &component)) {
+
+    for (i = stream->conncheck_list; i; i = i->next) {
+      pair = i->data;
+      if (pair->component_id == component_id && pair->nominated) {
+        return pair;
+      }
+    }
+  }
+  return NULL;
 }
 
 static gboolean priv_add_remote_candidate (
@@ -3526,6 +3560,7 @@ static gboolean priv_add_remote_candidate (
 {
   NiceComponent *component;
   NiceCandidate *candidate;
+  CandidateCheckPair *pair;
 
   if (transport == NICE_CANDIDATE_TRANSPORT_UDP &&
       !agent->use_ice_udp)
@@ -3599,10 +3634,29 @@ static gboolean priv_add_remote_candidate (
 
     /* since the type of the existing candidate may have changed,
      * the pairs priority and foundation related to this candidate need
-     * to be recomputed.
+     * to be recomputed...
      */
     recalculate_pair_priorities (agent);
     priv_update_pair_foundations (agent, stream_id, component_id, candidate);
+    /* ... and maybe we now have another nominated pair with a higher
+     * priority as the result of this priorities update.
+     */
+    pair = priv_get_highest_priority_nominated_pair (agent,
+        stream_id, component_id);
+    if (pair &&
+        (pair->local != component->selected_pair.local ||
+         pair->remote != component->selected_pair.remote)) {
+      /* If we have (at least) one pair with the nominated flag set, it
+       * implies that this pair (or another) is set as the selected pair
+       * for this component. In other words, this is really an *update*
+       * of the selected pair.
+       */
+      g_assert (component->selected_pair.local != NULL);
+      g_assert (component->selected_pair.remote != NULL);
+      nice_debug ("Agent %p : Updating selected pair with higher "
+          "priority nominated pair %p.", agent, pair);
+      conn_check_update_selected_pair (agent, component, pair);
+    }
   }
   else {
     /* case 2: add a new candidate */
@@ -3641,7 +3695,7 @@ static gboolean priv_add_remote_candidate (
       if (agent->nomination_mode == NICE_NOMINATION_MODE_AGGRESSIVE &&
           transport != NICE_CANDIDATE_TRANSPORT_UDP) {
         nice_debug ("Agent %p : we have TCP candidates, switching back "
-          "to regular nomination mode", agent);
+            "to regular nomination mode", agent);
         agent->nomination_mode = NICE_NOMINATION_MODE_REGULAR;
       }
     }
