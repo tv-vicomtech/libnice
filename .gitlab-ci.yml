@@ -22,6 +22,7 @@ build autotools:
 test autotools:
   stage: test
   image: registry.freedesktop.org/libnice/libnice/centos7/autotools-build
+  allow_failure: true
   except:
     - schedules
   dependencies:
@@ -42,6 +43,7 @@ test autotools:
 distcheck autotools:
   stage: test
   image: registry.freedesktop.org/libnice/libnice/centos7/autotools-build
+  allow_failure: true
   except:
     - schedules
   dependencies:
