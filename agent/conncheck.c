@@ -79,6 +79,10 @@ static CandidateCheckPair *priv_conn_check_add_for_candidate_pair_matched (
     NiceCandidate *local, NiceCandidate *remote, NiceCheckState initial_state);
 static gboolean priv_conn_keepalive_tick_agent_locked (NiceAgent *agent,
     gpointer pointer);
+static gboolean local_candidate_and_socket_compatible (NiceAgent *agent,
+    NiceCandidate *lcand, NiceSocket *socket);
+static gboolean remote_candidate_and_socket_compatible (NiceAgent *agent,
+    NiceCandidate *lcand, NiceCandidate *rcand, NiceSocket *socket);
 
 static gint64 priv_timer_remainder (gint64 timer, gint64 now)
 {
@@ -322,6 +326,255 @@ priv_print_conn_check_lists (NiceAgent *agent, const gchar *where, const gchar *
         print_component_incoming_checks (agent, stream, component);
     }
   }
+}
+
+/*
+ */
+static void
+priv_self_tests(NiceAgent *agent)
+{
+  GSList *i, *j, *k, *l, *m, *n;
+  NiceCandidateType _prflx = NICE_CANDIDATE_TYPE_PEER_REFLEXIVE;
+  NiceCandidateTransport _udp = NICE_CANDIDATE_TRANSPORT_UDP;
+  NiceCandidateTransport _tcp_act = NICE_CANDIDATE_TRANSPORT_TCP_ACTIVE;
+  NiceCandidateTransport _tcp_pass = NICE_CANDIDATE_TRANSPORT_TCP_PASSIVE;
+  NiceSocketType sock_tcp_act = NICE_SOCKET_TYPE_TCP_ACTIVE;
+  NiceSocketType sock_tcp_bsd = NICE_SOCKET_TYPE_TCP_BSD;
+  NiceSocketType sock_udp_turn = NICE_SOCKET_TYPE_UDP_TURN;
+
+  if (agent->compatibility == NICE_COMPATIBILITY_OC2007)
+    return;
+
+  for (i = agent->streams; i; i = i->next) {
+    NiceStream *stream = i->data;
+    for (j = stream->components; j; j = j->next) {
+      NiceComponent *component = j->data;
+      for (k = stream->conncheck_list; k; k = k->next) {
+        CandidateCheckPair *p1 = k->data;
+        if (p1->component_id == component->id) {
+          gboolean pass1 = TRUE;
+          NiceCandidate *c1 = p1->local;
+          NiceCandidate *c2 = p1->remote;
+          NiceCandidateTransport t1=c1->transport;
+          NiceCandidateTransport t2=c2->transport;
+          NiceCandidateType type1 = c1->type;
+          NiceCandidateType type2 = c2->type;
+          NiceSocket *s0 = p1->sockptr;
+          NiceSocket *s1 = c1->sockptr;
+          NiceSocket *s2 = c2->sockptr;
+
+          /* check pairs transport, types and sockets */
+
+          pass1 &= (conn_check_match_transport (t1) == t2);
+          pass1 &= (s0 != 0);
+          pass1 &= (s1 != 0);
+          if (type2 == _prflx && t1 == _tcp_pass && t2 == _tcp_act) {
+            pass1 &= (s1 != s0);
+            pass1 &= (s2 == s0);
+          }
+          if (type2 == _prflx && t1 == _udp && t2 == _udp) {
+            pass1 &= (s1 == s0);
+            pass1 &= (s2 != 0);
+          }
+          if (t1 == _tcp_act && t2 == _tcp_pass) {
+            if (s0->type == sock_tcp_act ||
+                s0->type == sock_udp_turn ||
+                (s0->type == sock_tcp_bsd && type1 == _prflx)) {
+              pass1 &= (s1 == s0);
+              pass1 &= (s2 == 0);
+            } else {
+              pass1 &= (s0->type == sock_tcp_bsd);
+              pass1 &= (s1->type == sock_tcp_act);
+              pass1 &= (s2 == 0);
+            }
+          }
+          if (t1 == _tcp_pass && t2 == _tcp_act)
+            pass1 &= (s2 == s0);
+          if (type2 != _prflx && t1 == _udp && t2 == _udp) {
+            pass1 &= (s1 == s0);
+            pass1 &= (s2 == 0);
+          }
+          if (type2 == _prflx && t1 == _udp && t2 == _udp) {
+            pass1 &= (s1 == s0);
+            pass1 &= (s2 != 0);
+          }
+          pass1 &= (local_candidate_and_socket_compatible (agent, c1, s0));
+          pass1 &= (remote_candidate_and_socket_compatible (agent, c1, c2, s0));
+
+          if (!pass1) {
+            priv_print_conn_check_lists (agent, G_STRFUNC, NULL);
+            nice_debug ("Agent %p : BUG ON pair %p.", agent, p1);
+          }
+
+          /**/
+
+          g_assert (conn_check_match_transport (t1) == t2);
+          g_assert (s0 != 0);
+          g_assert (s1 != 0);
+          if (type2 == _prflx && t1 == _tcp_pass && t2 == _tcp_act) {
+            g_assert (s1 != s0);
+            g_assert (s2 == s0);
+          }
+          if (type2 == _prflx && t1 == _udp && t2 == _udp) {
+            g_assert (s1 == s0);
+            g_assert (s2 != 0);
+          }
+          if (t1 == _tcp_act && t2 == _tcp_pass) {
+            if (s0->type == sock_tcp_act ||
+                s0->type == sock_udp_turn ||
+                (s0->type == sock_tcp_bsd && type1 == _prflx)) {
+              g_assert (s1 == s0);
+              g_assert (s2 == 0);
+            }
+            else {
+              g_assert (s0->type == sock_tcp_bsd);
+              g_assert (s1->type == sock_tcp_act);
+              g_assert (s2 == 0);
+            }
+          }
+          if (t1 == _tcp_pass && t2 == _tcp_act)
+            g_assert (s2 == s0);
+          if (type2 != _prflx && t1 == _udp && t2 == _udp) {
+            g_assert (s1 == s0);
+            g_assert (s2 == 0);
+          }
+          if (type2 == _prflx && t1 == _udp && t2 == _udp) {
+            g_assert (s1 == s0);
+            g_assert (s2 != 0);
+          }
+          g_assert (local_candidate_and_socket_compatible (agent, c1, s0));
+          g_assert (remote_candidate_and_socket_compatible (agent, c1, c2, s0));
+
+          /**/
+
+          for (l = stream->conncheck_list; l; l = l->next) {
+            CandidateCheckPair *p2 = l->data;
+            if (p2->component_id == component->id && p2 != p1) {
+              gboolean pass2 = TRUE;
+
+              /* check priorities */
+
+              if (p1->local == p2->local)
+                pass2 &= (p1->stun_priority == p2->stun_priority);
+              else {
+                pass2 &= (p1->priority != p2->priority);
+                if (!p1->succeeded_pair && !p2->succeeded_pair)
+                  pass2 &= (p1->stun_priority != p2->stun_priority);
+                if (p1->succeeded_pair && !p2->succeeded_pair &&
+                    p1->succeeded_pair->local != p2->local)
+                  pass2 &= (p1->stun_priority != p2->stun_priority);
+                if (p2->succeeded_pair && !p1->succeeded_pair &&
+                    p2->succeeded_pair->local != p1->local)
+                  pass2 &= (p1->stun_priority != p2->stun_priority);
+                if (p2->succeeded_pair && p1->succeeded_pair &&
+                    p1->succeeded_pair->local != p2->succeeded_pair->local)
+                  pass2 &= (p1->stun_priority != p2->stun_priority);
+              }
+              if (p1->local == p2->local)
+                pass2 &= (p1->remote != p2->remote);
+
+              if (!pass2) {
+                priv_print_conn_check_lists (agent, G_STRFUNC, NULL);
+                nice_debug ("Agent %p : BUG ON pair %p and %p.", agent, p1, p2);
+              }
+
+              /**/
+
+              if (p1->local == p2->local)
+                g_assert (p1->stun_priority == p2->stun_priority);
+              else {
+                g_assert (p1->priority != p2->priority);
+                if (!p1->succeeded_pair && !p2->succeeded_pair)
+                  g_assert (p1->stun_priority != p2->stun_priority);
+                if (p1->succeeded_pair && !p2->succeeded_pair &&
+                    p1->succeeded_pair->local != p2->local)
+                  g_assert (p1->stun_priority != p2->stun_priority);
+                if (p2->succeeded_pair && !p1->succeeded_pair &&
+                    p2->succeeded_pair->local != p1->local)
+                  g_assert (p1->stun_priority != p2->stun_priority);
+                if (p2->succeeded_pair && p1->succeeded_pair &&
+                    p1->succeeded_pair->local != p2->succeeded_pair->local)
+                  g_assert (p1->stun_priority != p2->stun_priority);
+              }
+              if (p1->local == p2->local)
+                g_assert (p1->remote != p2->remote);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (i = agent->streams; i; i = i->next) {
+    NiceStream *stream1 = i->data;
+    for (j = stream1->components; j; j = j->next) {
+      NiceComponent *component1 = j->data;
+
+      for (k = agent->streams; k; k = k->next) {
+        NiceStream *stream2 = k->data;
+        for (l = stream2->components; l; l = l->next) {
+          NiceComponent *component2 = l->data;
+          if (stream2->id <= stream1->id &&
+              component2->id <= component1->id) {
+
+            for (m = component1->local_candidates; m; m = m->next) {
+              NiceCandidate *c1 = m->data;
+              for (n = component2->local_candidates; n; n = n->next) {
+                NiceCandidate *c2 = n->data;
+                gboolean pass3 = TRUE;
+
+                if (c1 == c2)
+                  continue;
+
+                /* Check local candidates addresses */
+
+                if (c1->transport != _tcp_act && c2->transport != _tcp_act)
+                  pass3 &= (
+                      !(nice_address_equal (&c1->addr, &c2->addr) &&
+                      nice_address_equal (&c1->base_addr, &c2->base_addr) &&
+                      c1->transport == c2->transport));
+
+                /* The nat binding of a srflx local candidate may be
+                 * recycled by the nat algorithm quite quickly if not
+                 * refreshed (30 seconds by the linux conntrack module
+                 * on initial packet, 120 seconds when a second packet
+                 * is seen).
+                 *
+                 * Local candidates stop to be kept alive (by timer Tr)
+                 * when a pair is selected (in favor is the selected
+                 * candidate instead). So srflx candidates addresses of
+                 * previously connected components may easily be reused
+                 * for another component with a different base address.
+                 * This is normal, and a sane resource recycling for nat
+                 * bindings that stopped to be kept alive for a valid
+                 * reason.
+                 *
+                 * So we should not assume that prflx or srflx addresses
+                 * are unique across *all* streams and components.
+                 */
+
+                if (!pass3) {
+                  priv_print_conn_check_lists (agent, G_STRFUNC, NULL);
+                  nice_debug ("Agent %p : BUG ON cand %p and %p.",
+                      agent, c1, c2);
+                }
+
+                /**/
+
+                if (c1->transport != _tcp_act && c2->transport != _tcp_act)
+                  g_assert (
+                      !(nice_address_equal (&c1->addr, &c2->addr) &&
+                      nice_address_equal (&c1->base_addr, &c2->base_addr) &&
+                      c1->transport == c2->transport));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  nice_debug ("Agent %p : self tests completed successfully.", agent);
 }
 
 /* Add the pair to the triggered checks list, if not already present
@@ -2227,6 +2480,7 @@ static void priv_update_check_list_state_for_ready (NiceAgent *agent, NiceStream
     }
   }
 
+  priv_self_tests(agent);
   if (nominated > 0) {
     /* Only go to READY if no checks are left in progress. If there are
      * any that are kept, then this function will be called again when the
