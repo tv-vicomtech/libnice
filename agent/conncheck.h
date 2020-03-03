@@ -98,7 +98,7 @@ struct _CandidateCheckPair
   CandidateCheckPair *discovered_pair;
   CandidateCheckPair *succeeded_pair;
   guint64 priority;
-  guint32 prflx_priority;
+  guint32 stun_priority;
   GSList *stun_transactions; /* a list of ongoing stun requests */
 };
 
@@ -118,8 +118,6 @@ void
 conn_check_prune_socket (NiceAgent *agent, NiceStream *stream, NiceComponent *component,
     NiceSocket *sock);
 
-guint32 ensure_unique_priority (NiceStream *stream, NiceComponent *component,
-    guint32 priority);
 void recalculate_pair_priorities (NiceAgent *agent);
 void conn_check_update_selected_pair (NiceAgent *agent,
     NiceComponent *component, CandidateCheckPair *pair);
