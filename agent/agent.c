@@ -3156,10 +3156,15 @@ nice_agent_gather_candidates (
 
         host_candidate = NULL;
         while (res == HOST_CANDIDATE_CANT_CREATE_SOCKET) {
-          nice_debug ("Agent %p: Trying to create host candidate on port %d", agent, current_port);
-          nice_address_set_port (addr, current_port);
-          res =  discovery_add_local_host_candidate (agent, stream->id, cid,
-              addr, transport, &host_candidate);
+          if (!nice_component_port_excluded (component, current_port))
+          {
+            nice_debug ("Agent %p: Trying to create host candidate on port %d",
+                agent, current_port);
+            nice_address_set_port (addr, current_port);
+            res = discovery_add_local_host_candidate (agent, stream->id, cid,
+                addr, transport, &host_candidate);
+          }
+
           if (current_port > 0)
             current_port++;
           if (current_port > component->max_port) current_port = component->min_port;
@@ -3449,6 +3454,31 @@ nice_agent_set_port_range (NiceAgent *agent, guint stream_id, guint component_id
     } else {
       component->min_port = min_port;
       component->max_port = max_port;
+    }
+  }
+
+  agent_unlock_and_emit (agent);
+}
+
+NICEAPI_EXPORT void
+nice_agent_exclude_port_range (NiceAgent *agent, guint stream_id,
+    guint component_id, guint min_port, guint max_port)
+{
+  NiceStream *stream;
+  NiceComponent *component;
+
+  g_return_if_fail (NICE_IS_AGENT (agent));
+  g_return_if_fail (stream_id >= 1);
+  g_return_if_fail (component_id >= 1);
+
+  agent_lock (agent);
+
+  if (agent_find_component (agent, stream_id, component_id, &stream,
+          &component)) {
+    if (stream->gathering_started) {
+      g_critical ("nice_agent_gather_candidates (stream_id=%u) already called for this stream", stream_id);
+    } else {
+      nice_component_exclude_port_range (component, min_port, max_port);
     }
   }
 

@@ -153,6 +153,29 @@ socket_source_free (SocketSource *source)
   g_slice_free (SocketSource, source);
 }
 
+typedef struct _ExcludePortsData
+{
+  guint min_port;
+  guint max_port;
+} ExcludePortsData;
+
+static ExcludePortsData *
+exclude_ports_data_new (guint min_port, guint max_port)
+{
+  ExcludePortsData *data = g_slice_new0 (ExcludePortsData);
+
+  data->min_port = min_port;
+  data->max_port = max_port;
+
+  return data;
+}
+
+static void
+exclude_ports_data_destroy (ExcludePortsData *data)
+{
+  g_slice_free (ExcludePortsData, data);
+}
+
 NiceComponent *
 nice_component_new (guint id, NiceAgent *agent, NiceStream *stream)
 {
@@ -1109,6 +1132,8 @@ nice_component_init (NiceComponent *component)
   nice_component_set_io_context (component, NULL);
   nice_component_set_io_callback (component, NULL, NULL, NULL, 0, NULL);
 
+  component->exclude_ports = NULL;
+
   g_queue_init (&component->queued_tcp_packets);
   g_queue_init (&component->incoming_checks);
 }
@@ -1234,6 +1259,9 @@ nice_component_finalize (GObject *obj)
   }
 
   g_main_context_unref (cmp->own_ctx);
+
+  g_slist_free_full (cmp->exclude_ports,
+      (GDestroyNotify) exclude_ports_data_destroy);
 
   g_weak_ref_clear (&cmp->agent_ref);
 
@@ -1639,4 +1667,28 @@ nice_component_get_sockets (NiceComponent *component)
   }
 
   return array;
+}
+
+void
+nice_component_exclude_port_range (NiceComponent *component, guint min_port,
+    guint max_port)
+{
+  ExcludePortsData *data = exclude_ports_data_new(min_port, max_port);
+  component->exclude_ports = g_slist_prepend (component->exclude_ports, data);
+}
+
+gboolean
+nice_component_port_excluded (NiceComponent *component, guint port)
+{
+  const GSList *iter;
+
+  for (iter = component->exclude_ports; iter; iter = g_slist_next (iter)) {
+    ExcludePortsData *data = (ExcludePortsData *) iter->data;
+
+    if (port >= data->min_port && port <= data->max_port) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
 }
